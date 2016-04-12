@@ -95,6 +95,7 @@ EXAMPLES = '''
 - firewalld: rich_rule='rule service name="ftp" audit limit value="1/m" accept' permanent=true state=enabled
 - firewalld: source='192.168.1.0/24' zone=internal state=enabled
 - firewalld: zone=trusted interface=eth2 permanent=true state=enabled
+- firewalld: mapping=masquerade state=disabled permanent=true zone=dmz
 '''
 
 import os
@@ -113,6 +114,22 @@ try:
         HAS_FIREWALLD = True
 except ImportError:
     HAS_FIREWALLD = False
+
+
+#####################
+# masquerade handling
+#
+def get_masquerade_enabled(zone):
+    if fw.queryMasquerade(zone) == True:
+        return True
+    else:
+        return False
+    
+def set_masquerade_enabled(zone):
+    fw.addMasquerade(zone)
+
+def set_masquerade_disabled(zone):
+    fw.removeMasquerade(zone)
 
 ################
 # port handling
@@ -287,6 +304,7 @@ def main():
             state=dict(choices=['enabled', 'disabled'], required=True),
             timeout=dict(type='int',required=False,default=0),
             interface=dict(required=False,default=None),
+            mapping=dict(choices=['masquerade','port_forward'],required=False),
         ),
         supports_check_mode=True
     )
@@ -327,6 +345,15 @@ def main():
     immediate = module.params['immediate']
     timeout = module.params['timeout']
     interface = module.params['interface']
+    mapping = module.params['mapping']
+
+    ## Check for firewalld running
+    try:
+        if fw.connected == False:
+            module.fail_json(msg='firewalld service must be running')
+    except AttributeError:
+        module.fail_json(msg="firewalld connection can't be established,\
+                version likely too old. Requires firewalld >= 2.0.11")
 
     modification_count = 0
     if service != None:
@@ -336,6 +363,8 @@ def main():
     if rich_rule != None:
         modification_count += 1
     if interface != None:
+        modification_count += 1
+    if mapping != None:
         modification_count += 1
 
     if modification_count > 1:
@@ -503,6 +532,26 @@ def main():
                 remove_interface(zone, interface)
                 changed=True
                 msgs.append("Removed %s from zone %s" % (interface, zone))
+
+    if mapping == "masquerade":
+        is_enabled = get_masquerade_enabled(zone)
+        msgs.append("Is Enabled? %s" % (is_enabled))
+        if desired_state == "enabled":
+            if is_enabled == False:
+                if module.check_mode:
+                    module.exit_json(changed=True)
+
+                set_masquerade_enabled(zone)
+                changed=True
+                msgs.append("Added masquerade to zone %s" % (zone))
+        elif desired_state == "disabled":
+            if is_enabled == True:
+                if module.check_mode:
+                    module.exit_json(changed=True)
+
+                set_masquerade_disabled(zone)
+                changed=True
+                msgs.append("Removed masquerade from zone %s" % (zone))
 
     module.exit_json(changed=changed, msg=', '.join(msgs))
 
