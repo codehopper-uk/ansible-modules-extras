@@ -80,12 +80,11 @@ options:
       - "The amount of time the rule should be in effect for when non-permanent."
     required: false
     default: 0
-  mapping:
+  masquerade:
     description:
       - 'The masquerade setting you would like to enable/disable to/from zones within firewalld'
     required: false
-    default: false
-    choices: [ "masquerade", "port_forward" ]
+    default: null
 notes:
   - Not tested on any Debian based system.
   - Requires the python2 bindings of firewalld, who may not be installed by default if the distribution switched to python 3 
@@ -101,7 +100,7 @@ EXAMPLES = '''
 - firewalld: rich_rule='rule service name="ftp" audit limit value="1/m" accept' permanent=true state=enabled
 - firewalld: source='192.168.1.0/24' zone=internal state=enabled
 - firewalld: zone=trusted interface=eth2 permanent=true state=enabled
-- firewalld: mapping=masquerade state=disabled permanent=true zone=dmz
+- firewalld: masquerade=yes state=enabled permanent=true zone=dmz
 '''
 
 import os
@@ -324,7 +323,7 @@ def main():
             state=dict(choices=['enabled', 'disabled'], required=True),
             timeout=dict(type='int',required=False,default=0),
             interface=dict(required=False,default=None),
-            mapping=dict(choices=['masquerade','port_forward'],required=False),
+            masquerade=dict(required=False,default=None),
         ),
         supports_check_mode=True
     )
@@ -365,7 +364,7 @@ def main():
     immediate = module.params['immediate']
     timeout = module.params['timeout']
     interface = module.params['interface']
-    mapping = module.params['mapping']
+    masquerade = module.params['masquerade']
 
     ## Check for firewalld running
     try:
@@ -384,7 +383,7 @@ def main():
         modification_count += 1
     if interface != None:
         modification_count += 1
-    if mapping != None:
+    if masquerade != None:
         modification_count += 1
 
     if modification_count > 1:
@@ -553,12 +552,12 @@ def main():
                 changed=True
                 msgs.append("Removed %s from zone %s" % (interface, zone))
 
-    if mapping == "masquerade":
+    if masquerade != None:
 
         if permanent:
             is_enabled = get_masquerade_enabled_permanent(zone)
             msgs.append('Permanent operation')
-            msgs.append("Is Enabled? %s" % (is_enabled))
+            
             if desired_state == "enabled":
                 if is_enabled == False:
                     if module.check_mode:
@@ -578,7 +577,7 @@ def main():
         if immediate or not permanent:
             is_enabled = get_masquerade_enabled(zone)
             msgs.append('Non-permanent operation')
-            msgs.append("Is Enabled? %s" % (is_enabled))
+            
             if desired_state == "enabled":
                 if is_enabled == False:
                     if module.check_mode:
