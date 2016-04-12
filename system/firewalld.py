@@ -80,6 +80,12 @@ options:
       - "The amount of time the rule should be in effect for when non-permanent."
     required: false
     default: 0
+  mapping:
+    description:
+      - 'The masquerade setting you would like to enable/disable to/from zones within firewalld'
+    required: false
+    default: false
+    choices: [ "masquerade", "port_forward" ]
 notes:
   - Not tested on any Debian based system.
   - Requires the python2 bindings of firewalld, who may not be installed by default if the distribution switched to python 3 
@@ -124,12 +130,26 @@ def get_masquerade_enabled(zone):
         return True
     else:
         return False
+
+def get_masquerade_enabled_permanent(zone):
+    fw_zone = fw.config().getZoneByName(zone)
+    fw_settings = fw_zone.getSettings()
+    if fw_settings.getMasquerade() == True:
+        return True
+    else:
+        return False
     
 def set_masquerade_enabled(zone):
     fw.addMasquerade(zone)
 
 def set_masquerade_disabled(zone):
     fw.removeMasquerade(zone)
+
+def set_masquerade_permanent(zone, masquerade):
+    fw_zone = fw.config().getZoneByName(zone)
+    fw_settings = fw_zone.getSettings()
+    fw_settings.setMasquerade(masquerade)
+    fw_zone.update(fw_settings)
 
 ################
 # port handling
@@ -534,24 +554,47 @@ def main():
                 msgs.append("Removed %s from zone %s" % (interface, zone))
 
     if mapping == "masquerade":
-        is_enabled = get_masquerade_enabled(zone)
-        msgs.append("Is Enabled? %s" % (is_enabled))
-        if desired_state == "enabled":
-            if is_enabled == False:
-                if module.check_mode:
-                    module.exit_json(changed=True)
 
-                set_masquerade_enabled(zone)
-                changed=True
-                msgs.append("Added masquerade to zone %s" % (zone))
-        elif desired_state == "disabled":
-            if is_enabled == True:
-                if module.check_mode:
-                    module.exit_json(changed=True)
+        if permanent:
+            is_enabled = get_masquerade_enabled_permanent(zone)
+            msgs.append('Permanent operation')
+            msgs.append("Is Enabled? %s" % (is_enabled))
+            if desired_state == "enabled":
+                if is_enabled == False:
+                    if module.check_mode:
+                        module.exit_json(changed=True)
 
-                set_masquerade_disabled(zone)
-                changed=True
-                msgs.append("Removed masquerade from zone %s" % (zone))
+                    set_masquerade_permanent(zone, True)
+                    changed=True
+                    msgs.append("Added masquerade to zone %s" % (zone))
+            elif desired_state == "disabled":
+                if is_enabled == True:
+                    if module.check_mode:
+                        module.exit_json(changed=True)
+
+                    set_masquerade_permanent(zone, False)
+                    changed=True
+                    msgs.append("Removed masquerade from zone %s" % (zone))
+        if immediate or not permanent:
+            is_enabled = get_masquerade_enabled(zone)
+            msgs.append('Non-permanent operation')
+            msgs.append("Is Enabled? %s" % (is_enabled))
+            if desired_state == "enabled":
+                if is_enabled == False:
+                    if module.check_mode:
+                        module.exit_json(changed=True)
+
+                    set_masquerade_enabled(zone)
+                    changed=True
+                    msgs.append("Added masquerade to zone %s" % (zone))
+            elif desired_state == "disabled":
+                if is_enabled == True:
+                    if module.check_mode:
+                        module.exit_json(changed=True)
+
+                    set_masquerade_disabled(zone)
+                    changed=True
+                    msgs.append("Removed masquerade from zone %s" % (zone))
 
     module.exit_json(changed=changed, msg=', '.join(msgs))
 
