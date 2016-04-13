@@ -85,6 +85,7 @@ options:
       - 'The masquerade setting you would like to enable/disable to/from zones within firewalld'
     required: false
     default: null
+    version_added: "2.1"
 notes:
   - Not tested on any Debian based system.
   - Requires the python2 bindings of firewalld, who may not be installed by default if the distribution switched to python 3 
